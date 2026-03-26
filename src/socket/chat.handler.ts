@@ -1,7 +1,49 @@
 import { Server } from "socket.io";
 import { redisClient, getSessionHistory } from "../memory/sessionMemory";
-import { agentWithHistory } from "../agent/titanAgent";
+import { agentWithHistory, TitanChatReplySchema } from "../agent/titanAgent";
 import { env } from "../config/env";
+
+function safeToText(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (value == null) return "";
+  if (value instanceof Error) return value.message;
+
+  // Anthropic content blocks may come back as an array of { type: "text", text: "..." }
+  if (Array.isArray(value)) {
+    const texts = value
+      .map((v) => {
+        if (typeof v === "string") return v;
+        if (v && typeof v === "object" && "text" in v && typeof (v as any).text === "string") {
+          return (v as any).text;
+        }
+        return "";
+      })
+      .filter(Boolean);
+    if (texts.length > 0) return texts.join("");
+  }
+
+  if (value && typeof value === "object" && "text" in value && typeof (value as any).text === "string") {
+    return (value as any).text;
+  }
+
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
+function parseStructuredReply(raw: unknown): string {
+  const asText = safeToText(raw);
+  try {
+    const parsedJson = JSON.parse(asText);
+    const parsed = TitanChatReplySchema.safeParse(parsedJson);
+    if (parsed.success) return parsed.data.text;
+  } catch {
+    // ignore
+  }
+  return asText;
+}
 
 export function registerChatHandlers(io: Server): void {
   io.on("connection", async (socket) => {
@@ -46,10 +88,11 @@ export function registerChatHandlers(io: Server): void {
       try {
         const result = await agentWithHistory.invoke(
           { input: userMessage },
-          { configurable: { sessionId } }
+          // Avoid attaching any external callbacks/tracers here.
+          { configurable: { sessionId }, callbacks: [] }
         );
 
-        const reply = result.output as string;
+        const reply = parseStructuredReply((result as any)?.output ?? (result as any)?.text ?? result);
         console.log(`🤖 [${sessionId}] Agent: ${reply}`);
 
         socket.emit("chat:typing", { typing: false });

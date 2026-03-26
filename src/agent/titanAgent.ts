@@ -5,6 +5,7 @@ import {
   MessagesPlaceholder,
 } from "@langchain/core/prompts";
 import { RunnableWithMessageHistory } from "@langchain/core/runnables";
+import { z } from "zod";
 import { env } from "../config/env";
 import { getSessionHistory } from "../memory/sessionMemory";
 import { searchFaqTool } from "./tools/searchFaq.tool";
@@ -20,8 +21,21 @@ const llm = new ChatAnthropic({
 
 const tools = [searchFaqTool, createTicketTool];
 
+export const TitanChatReplySchema = z.object({
+  text: z.string(),
+});
+
 const prompt = ChatPromptTemplate.fromMessages([
-  ["system", TITAN_SYSTEM_PROMPT],
+  [
+    "system",
+    `${TITAN_SYSTEM_PROMPT}
+
+Tu dois répondre au format JSON uniquement, avec exactement cette forme:
+{{"text": "..."}}
+
+Ne mets rien d'autre que ce JSON dans ta réponse.
+`,
+  ],
   new MessagesPlaceholder("chat_history"),
   ["human", "{input}"],
   new MessagesPlaceholder("agent_scratchpad"),
