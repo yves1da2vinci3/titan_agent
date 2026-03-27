@@ -9,6 +9,7 @@ import { searchFaqTool } from "./tools/searchFaq.tool";
 import { createTicketTool } from "./tools/createTicket.tool";
 import { startTimerTool } from "./tools/startTimer.tool";
 import { TITAN_SYSTEM_PROMPT } from "./prompt";
+import { stripMarkdownJsonFence } from "./stripMarkdownJsonFence";
 
 const llm = new ChatAnthropic({
   model: "claude-haiku-4-5-20251001",
@@ -33,6 +34,7 @@ const prompt = ChatPromptTemplate.fromMessages([
 
 Tu dois répondre au format JSON uniquement, avec exactement cette forme:
 {{"text": "..."}}
+Sans bloc Markdown, sans ligne contenant \`\`\` ni \`\`\`json avant ou après le JSON.
 
 {format_instructions}`,
   ],
@@ -76,7 +78,7 @@ function contentToText(value: unknown): string {
 }
 
 function normalizeAgentText(raw: unknown): string {
-  const asText = contentToText(raw).trim();
+  const asText = stripMarkdownJsonFence(contentToText(raw).trim());
   if (!asText) return "";
 
   try {

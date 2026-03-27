@@ -63,8 +63,13 @@ export const createTicketTool = new DynamicStructuredTool({
     const clientId = parseInt(meta.clientId, 10) || 0;
     const zoneId = parseInt(meta.zoneId ?? "0", 10) || 0;
 
-    if (!clientId || !zoneId) {
-      console.warn(`[createTicket] clientId=${clientId} zoneId=${zoneId} — informations de session incomplètes`);
+    if (!clientId) {
+      console.warn(`[createTicket] clientId=${clientId} — session sans client`);
+      return "Impossible de créer le ticket : session utilisateur invalide. Réouvrez le chat depuis l'application.";
+    }
+    if (!zoneId) {
+      console.warn(`[createTicket] zoneId=0 — méta session incomplète ou zone non transmise`);
+      return "Impossible de créer le ticket : la zone du compte est inconnue. Mettez à jour votre localisation dans le profil, puis réessayez.";
     }
 
     const mappedBreakdownType = BREAKDOWN_TYPE_MAP[breakdownType] ?? "other";
@@ -103,7 +108,13 @@ export const createTicketTool = new DynamicStructuredTool({
           const ref = data.reference ? ` (réf: ${data.reference})` : "";
           return `Ticket créé avec succès${ref}. Un technicien va vous contacter très prochainement.`;
         }
-        console.error(`[createTicket] ticketSystem responded with ${response.status}`);
+        const errBody = await response.text().catch(() => "");
+        console.error(
+          `[createTicket] ticketSystem ${response.status}: ${errBody || "(no body)"}`,
+        );
+        if (response.status === 401) {
+          return "Le service tickets est momentanément indisponible (authentification). Veuillez réessayer plus tard ou contactez le support.";
+        }
       } catch (err) {
         console.error("[createTicket] Erreur appel ticketSystem:", err);
       }

@@ -1,3 +1,5 @@
+import { stripMarkdownJsonFence } from "./stripMarkdownJsonFence";
+
 export interface ParsedResponse {
   message: string;
   buttons?: string[];
@@ -32,6 +34,8 @@ export function parseAgentResponse(raw: unknown): ParsedResponse {
     else if ("message" in raw) text = String((raw as { message: unknown }).message);
     else text = JSON.stringify(raw);
   }
+
+  text = stripMarkdownJsonFence(text);
 
   // Legacy JSON {"text": "..."} cleanup
   try {

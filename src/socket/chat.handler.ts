@@ -98,17 +98,27 @@ export function registerChatHandlers(io: Server): void {
     const query = socket.handshake.query as Record<string, string | undefined>;
     const sessionId = (query.sessionId ?? socket.id) as string;
     const clientId = (query.clientId ?? "unknown") as string;
-    const zoneId = (query.zoneId ?? "0") as string;
+    const incomingZoneRaw = (query.zoneId ?? "") as string;
+    const incomingZoneIsValid = incomingZoneRaw !== "" && incomingZoneRaw !== "0";
 
     const sessionStartedAt = new Date();
-
-    console.log(`🔌 Client connecté — sessionId: ${sessionId}, clientId: ${clientId}, zoneId: ${zoneId}`);
 
     // Load existing meta (for reconnects) or initialize
     const existingMetaRaw = await redisClient.get(`titan-agent:meta:${sessionId}`);
     const existingMeta: SessionMeta = existingMetaRaw
       ? (JSON.parse(existingMetaRaw) as SessionMeta)
-      : { clientId, zoneId };
+      : { clientId, zoneId: incomingZoneRaw || "0" };
+
+    // Ne pas écraser une zone déjà connue dans Redis par "0" (handshake avant hydratation client)
+    const existingZone = existingMeta.zoneId;
+    const existingZoneValid = existingZone !== undefined && existingZone !== "" && existingZone !== "0";
+    const zoneId = incomingZoneIsValid
+      ? incomingZoneRaw
+      : existingZoneValid
+        ? existingZone!
+        : incomingZoneRaw || "0";
+
+    console.log(`🔌 Client connecté — sessionId: ${sessionId}, clientId: ${clientId}, zoneId: ${zoneId}`);
 
     // Always refresh TTL and update clientId/zoneId
     const updatedMeta: SessionMeta = { ...existingMeta, clientId, zoneId };
