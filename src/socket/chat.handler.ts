@@ -251,6 +251,8 @@ export function registerChatHandlers(io: Server): void {
 
       const alreadyDone = await isAlreadyPersisted(sessionId);
       if (alreadyDone) {
+        await redisClient.del(`titan-agent:shadow:${sessionId}`);
+        await cleanupSession(sessionId);
         socket.emit("chat:session_ended", { sessionId });
         return;
       }
@@ -264,13 +266,15 @@ export function registerChatHandlers(io: Server): void {
 
       if (messages.length > 0) {
         const persisted = await persistConversation(sessionId, meta, messages, sessionStartedAt);
-        if (persisted) {
-          await redisClient.del(`titan-agent:shadow:${sessionId}`);
-          await cleanupSession(sessionId);
-        } else {
-          console.warn(`[chat:end] Persistance échouée pour ${sessionId} — Redis conservé`);
+        if (!persisted) {
+          console.warn(
+            `[chat:end] Persistance échouée pour ${sessionId} — nettoyage Redis pour retirer la session des actives`,
+          );
         }
       }
+
+      await redisClient.del(`titan-agent:shadow:${sessionId}`);
+      await cleanupSession(sessionId);
 
       socket.emit("chat:session_ended", { sessionId });
     });
