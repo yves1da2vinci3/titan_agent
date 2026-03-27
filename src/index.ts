@@ -4,6 +4,7 @@ import { createServer } from "http";
 import { Server } from "socket.io";
 import { connectRedis, redisClient, getSessionHistory } from "./memory/sessionMemory";
 import { registerChatHandlers } from "./socket/chat.handler";
+import { startTTLWatcher } from "./services/ttlWatcher";
 import { env } from "./config/env";
 
 function extractTextFromContent(content: unknown): string {
@@ -26,6 +27,7 @@ function extractTextFromContent(content: unknown): string {
 async function bootstrap(): Promise<void> {
   // 1. Connexion Redis
   await connectRedis();
+  await startTTLWatcher();
 
   // 2. Setup Express + Socket.io
   const app = express();

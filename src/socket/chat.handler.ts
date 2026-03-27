@@ -117,12 +117,18 @@ export function registerChatHandlers(io: Server): void {
       JSON.stringify(updatedMeta),
     );
 
+    // ── Shadow key pour persistence TTL ──────────────────────────────────────
+    const shadowTTL = Math.max(env.SESSION_TTL_SECONDS - 60, 60);
+    await redisClient.setEx(`titan-agent:shadow:${sessionId}`, shadowTTL, "1");
+
     // ── Envoie l'historique existant au client ─────────────────────────────────
+    let hadHistory = false;
     try {
       const history = getSessionHistory(sessionId);
       const pastMessages = await history.getMessages();
 
       if (pastMessages.length > 0) {
+        hadHistory = true;
         const formatted = pastMessages.map((m) => ({
           role: m._getType() === "human" ? "user" : "agent",
           text: extractTextFromContent(m.content),
@@ -139,6 +145,7 @@ export function registerChatHandlers(io: Server): void {
         // Redis miss — try to recover from server PostgreSQL
         const archived = await fetchArchivedConversation(sessionId);
         if (archived && archived.length > 0) {
+          hadHistory = true;
           socket.emit("chat:history", {
             messages: archived,
             source: "archive",
@@ -148,6 +155,14 @@ export function registerChatHandlers(io: Server): void {
       }
     } catch (err) {
       console.error("Erreur récupération historique:", err);
+    }
+
+    // ── Message de bienvenue si nouvelle session ───────────────────────────────
+    if (!hadHistory) {
+      socket.emit("chat:reply", {
+        text: "Bonjour ! Je suis votre assistant Titan. Comment puis-je vous aider aujourd'hui ?\n\n💡 Lorsque votre problème est résolu, appuyez sur **Terminer** pour clôturer la conversation.",
+        sessionId,
+      });
     }
 
     // ── Écoute les messages ───────────────────────────────────────────────────
@@ -184,6 +199,10 @@ export function registerChatHandlers(io: Server): void {
             JSON.stringify(newMeta),
           );
         }
+
+        // Refresh shadow key TTL on each message (keeps the 60s gap intact)
+        const shadowTTL = Math.max(env.SESSION_TTL_SECONDS - 60, 60);
+        await redisClient.setEx(`titan-agent:shadow:${sessionId}`, shadowTTL, "1");
 
         // 3. Invoke support agent
         const rawText = await invokeSupportAgent(userMessage, sessionId);
@@ -231,8 +250,13 @@ export function registerChatHandlers(io: Server): void {
       const messages = await buildMessagesToSave(sessionId);
 
       if (messages.length > 0) {
-        await persistConversation(sessionId, meta, messages, sessionStartedAt);
-        await cleanupSession(sessionId);
+        const persisted = await persistConversation(sessionId, meta, messages, sessionStartedAt);
+        if (persisted) {
+          await redisClient.del(`titan-agent:shadow:${sessionId}`);
+          await cleanupSession(sessionId);
+        } else {
+          console.warn(`[chat:end] Persistance échouée pour ${sessionId} — Redis conservé`);
+        }
       }
 
       socket.emit("chat:session_ended", { sessionId });
