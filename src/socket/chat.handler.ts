@@ -1,66 +1,58 @@
-import { Server } from "socket.io";
+import { Server, Socket } from "socket.io";
 import { redisClient, getSessionHistory } from "../memory/sessionMemory";
-import { agentWithHistory, TitanChatReplySchema } from "../agent/titanAgent";
+import { invokeSupportAgent } from "../agent/titanAgent";
+import { parseAgentResponse } from "../agent/responseParser";
 import { env } from "../config/env";
 
-function safeToText(value: unknown): string {
-  if (typeof value === "string") return value;
-  if (value == null) return "";
-  if (value instanceof Error) return value.message;
+// ─── Guardrail ────────────────────────────────────────────────────────────────
 
-  // Anthropic content blocks may come back as an array of { type: "text", text: "..." }
-  if (Array.isArray(value)) {
-    const texts = value
-      .map((v) => {
-        if (typeof v === "string") return v;
-        if (v && typeof v === "object" && "text" in v && typeof (v as any).text === "string") {
-          return (v as any).text;
+const ANGER_KEYWORDS = [
+  "idiot", "idiote", "nul", "nulle", "merde", "incompétent", "incompétente",
+  "arnaque", "escroc", "inutile", "useless", "stupide", "con ", "connard",
+];
+
+function detectAnger(text: string): boolean {
+  const t = text.toLowerCase();
+  return ANGER_KEYWORDS.some((k) => t.includes(k));
+}
+
+// ─── Content extraction helpers ───────────────────────────────────────────────
+
+function extractTextFromContent(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    return content
+      .map((block) => {
+        if (typeof block === "string") return block;
+        if (block && typeof block === "object" && "text" in block) {
+          return String((block as { text: unknown }).text);
         }
         return "";
       })
-      .filter(Boolean);
-    if (texts.length > 0) return texts.join("");
+      .filter(Boolean)
+      .join("");
   }
-
-  if (value && typeof value === "object" && "text" in value && typeof (value as any).text === "string") {
-    return (value as any).text;
-  }
-
-  try {
-    return JSON.stringify(value);
-  } catch {
-    return String(value);
-  }
+  return "";
 }
 
-function parseStructuredReply(raw: unknown): string {
-  const asText = safeToText(raw);
-  try {
-    const parsedJson = JSON.parse(asText);
-    const parsed = TitanChatReplySchema.safeParse(parsedJson);
-    if (parsed.success) return parsed.data.text;
-  } catch {
-    // ignore
-  }
-  return asText;
-}
+// ─── Socket handlers ──────────────────────────────────────────────────────────
 
 export function registerChatHandlers(io: Server): void {
-  io.on("connection", async (socket) => {
+  io.on("connection", async (socket: Socket) => {
     const query = socket.handshake.query as Record<string, string | undefined>;
-    const sessionId = query.sessionId ?? socket.id;
-    const clientId = query.clientId ?? "unknown";
+    const sessionId = (query.sessionId ?? socket.id) as string;
+    const clientId = (query.clientId ?? "unknown") as string;
 
     console.log(`🔌 Client connecté — sessionId: ${sessionId}, clientId: ${clientId}`);
 
-    // Persiste clientId dans Redis avec le même TTL que la session
+    // Persiste clientId dans Redis avec le TTL de session
     await redisClient.setEx(
       `titan-agent:meta:${sessionId}`,
       env.SESSION_TTL_SECONDS,
       JSON.stringify({ clientId })
     );
 
-    // Envoie l'historique existant si le client se reconnecte avant expiration du TTL
+    // ── Envoie l'historique existant au client (reconnexion avant TTL) ─────────
     try {
       const history = getSessionHistory(sessionId);
       const pastMessages = await history.getMessages();
@@ -68,37 +60,54 @@ export function registerChatHandlers(io: Server): void {
       if (pastMessages.length > 0) {
         const formatted = pastMessages.map((m) => ({
           role: m._getType() === "human" ? "user" : "agent",
-          text: typeof m.content === "string" ? m.content : JSON.stringify(m.content),
+          text: extractTextFromContent(m.content),
         }));
         socket.emit("chat:history", { messages: formatted });
-        console.log(`📜 Historique envoyé — ${formatted.length} messages pour sessionId: ${sessionId}`);
+        console.log(`📜 Historique restauré — ${formatted.length} messages`);
       }
     } catch (err) {
-      console.error("Erreur lors de la récupération de l'historique:", err);
+      console.error("Erreur récupération historique:", err);
     }
 
-    // Écoute les messages entrants
+    // ── Écoute les messages ───────────────────────────────────────────────────
     socket.on("chat:message", async (data: { text: string }) => {
       const userMessage = data?.text?.trim();
       if (!userMessage) return;
 
       console.log(`💬 [${sessionId}] User: ${userMessage}`);
+
+      // 1. Guardrail — détection de colère
+      if (detectAnger(userMessage)) {
+        socket.emit("chat:escalate", {
+          message:
+            "Je comprends votre frustration. Permettez-moi de vous transférer vers un agent humain qui pourra mieux vous aider.",
+        });
+        return;
+      }
+
       socket.emit("chat:typing", { typing: true });
 
       try {
-        const result = await agentWithHistory.invoke(
-          { input: userMessage },
-          // Avoid attaching any external callbacks/tracers here.
-          { configurable: { sessionId }, callbacks: [] }
-        );
+        // 2. Invoke support agent
+        const rawText = await invokeSupportAgent(userMessage, sessionId);
+        const parsed = parseAgentResponse(rawText);
 
-        const reply = parseStructuredReply((result as any)?.output ?? (result as any)?.text ?? result);
-        console.log(`🤖 [${sessionId}] Agent: ${reply}`);
+        console.log(`🤖 [${sessionId}] Agent: ${parsed.message.slice(0, 80)}...`);
+        if (parsed.buttons) {
+          console.log(`   Buttons: ${parsed.buttons.join(", ")}`);
+        }
 
+        // 3. Émet la réponse finale structurée
         socket.emit("chat:typing", { typing: false });
-        socket.emit("chat:reply", { text: reply, sessionId });
+        socket.emit("chat:reply", {
+          text: parsed.message,
+          buttons: parsed.buttons,
+          action: parsed.action,
+          timerSeconds: parsed.timerSeconds,
+          sessionId,
+        });
       } catch (err) {
-        console.error(`Erreur agent [${sessionId}]:`, err);
+        console.error(`❌ Erreur agent [${sessionId}]:`, err);
         socket.emit("chat:typing", { typing: false });
         socket.emit("chat:error", {
           message:

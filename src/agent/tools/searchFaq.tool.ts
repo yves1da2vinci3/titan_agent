@@ -1,4 +1,5 @@
-import { DynamicTool } from "@langchain/core/tools";
+import { DynamicStructuredTool } from "@langchain/core/tools";
+import { z } from "zod";
 import { readFileSync } from "fs";
 import { join } from "path";
 
@@ -10,7 +11,6 @@ interface FaqSection {
 function loadFaqSections(): FaqSection[] {
   const faqPath = join(__dirname, "../../faq/titan-faq.md");
   const raw = readFileSync(faqPath, "utf-8");
-
   const sections: FaqSection[] = [];
   const lines = raw.split("\n");
   let currentTitle = "";
@@ -27,33 +27,35 @@ function loadFaqSections(): FaqSection[] {
       currentContent.push(line);
     }
   }
-
   if (currentTitle) {
     sections.push({ title: currentTitle, content: currentContent.join("\n").trim() });
   }
-
   return sections;
 }
 
 const faqSections = loadFaqSections();
 
-export const searchFaqTool = new DynamicTool({
+const searchFaqSchema = z.object({
+  query: z.string(),
+});
+
+export const searchFaqTool = new DynamicStructuredTool({
   name: "searchFAQ",
   description:
-    "Recherche dans la base de connaissance Titan Telecom. Utilise cet outil avant de répondre à une question sur les forfaits, les paiements, les cadeaux, les défis ou la connexion.",
-  func: async (query: string): Promise<string> => {
+    "Recherche dans la base de connaissance Titan Telecom. À utiliser pour les questions sur les forfaits, paiements, cadeaux, défis ou connexion WiFi.",
+  schema: searchFaqSchema,
+  func: async ({ query }: { query: string }): Promise<string> => {
     const q = query.toLowerCase();
     const results = faqSections.filter(
       (s) =>
         s.title.toLowerCase().includes(q) ||
         s.content.toLowerCase().includes(q)
     );
-
     if (results.length === 0) {
       return "Aucune information trouvée dans la FAQ pour cette requête.";
     }
-
     return results
+      .slice(0, 2)
       .map((r) => `### ${r.title}\n${r.content}`)
       .join("\n\n---\n\n");
   },

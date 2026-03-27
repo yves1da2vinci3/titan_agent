@@ -10,7 +10,15 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
-    "moduleResolution": "node"
+    "moduleResolution": "node",
+    "baseUrl": ".",
+    "paths": {
+      "@langchain/langgraph/prebuilt": [
+        "./node_modules/@langchain/langgraph/dist/prebuilt/index.d.ts"
+      ]
+    },
+    "incremental": true,
+    "tsBuildInfoFile": "./.tsbuildinfo"
   },
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist"]
