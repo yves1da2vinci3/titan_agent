@@ -3,6 +3,14 @@ import { redisClient, getSessionHistory } from "../memory/sessionMemory";
 import { invokeSupportAgent } from "../agent/titanAgent";
 import { parseAgentResponse } from "../agent/responseParser";
 import { env } from "../config/env";
+import {
+  persistConversation,
+  cleanupSession,
+  isAlreadyPersisted,
+  type MessageToSave,
+  type SessionMeta,
+} from "../services/conversationPersister";
+import { fetchArchivedConversation } from "../services/conversationFetcher";
 
 // ─── Guardrail ────────────────────────────────────────────────────────────────
 
@@ -35,6 +43,53 @@ function extractTextFromContent(content: unknown): string {
   return "";
 }
 
+// ─── Conversation title/category extraction ───────────────────────────────────
+
+async function extractConversationMeta(
+  userMessage: string,
+  sessionMeta: SessionMeta,
+): Promise<{ title: string; category: string }> {
+  // Only extract on first message (no title yet)
+  if (sessionMeta.title) {
+    return { title: sessionMeta.title, category: sessionMeta.category ?? "other" };
+  }
+
+  // Use a simple heuristic: truncate user message for title, map keywords to category
+  const title = userMessage.length > 60
+    ? userMessage.substring(0, 57) + "..."
+    : userMessage;
+
+  const lower = userMessage.toLowerCase();
+  let category = "other";
+  if (lower.includes("wifi") || lower.includes("internet") || lower.includes("connexion") || lower.includes("réseau") || lower.includes("fibre")) {
+    category = "wifi";
+  } else if (lower.includes("paiement") || lower.includes("facture") || lower.includes("recharge") || lower.includes("argent") || lower.includes("rembours")) {
+    category = "payment";
+  } else if (lower.includes("cadeau") || lower.includes("don") || lower.includes("partage") || lower.includes("gifting")) {
+    category = "gifting";
+  } else if (lower.includes("compte") || lower.includes("profil") || lower.includes("mot de passe") || lower.includes("connexion")) {
+    category = "account";
+  }
+
+  return { title, category };
+}
+
+// ─── Helpers to build MessageToSave list from Redis history ──────────────────
+
+async function buildMessagesToSave(sessionId: string): Promise<MessageToSave[]> {
+  try {
+    const history = getSessionHistory(sessionId);
+    const pastMessages = await history.getMessages();
+    return pastMessages.map((m, i) => ({
+      role: m._getType() === "human" ? "user" : "agent",
+      content: extractTextFromContent(m.content),
+      createdAt: new Date(Date.now() - (pastMessages.length - i) * 1000).toISOString(),
+    }));
+  } catch {
+    return [];
+  }
+}
+
 // ─── Socket handlers ──────────────────────────────────────────────────────────
 
 export function registerChatHandlers(io: Server): void {
@@ -42,17 +97,27 @@ export function registerChatHandlers(io: Server): void {
     const query = socket.handshake.query as Record<string, string | undefined>;
     const sessionId = (query.sessionId ?? socket.id) as string;
     const clientId = (query.clientId ?? "unknown") as string;
+    const zoneId = (query.zoneId ?? "0") as string;
 
-    console.log(`🔌 Client connecté — sessionId: ${sessionId}, clientId: ${clientId}`);
+    const sessionStartedAt = new Date();
 
-    // Persiste clientId dans Redis avec le TTL de session
+    console.log(`🔌 Client connecté — sessionId: ${sessionId}, clientId: ${clientId}, zoneId: ${zoneId}`);
+
+    // Load existing meta (for reconnects) or initialize
+    const existingMetaRaw = await redisClient.get(`titan-agent:meta:${sessionId}`);
+    const existingMeta: SessionMeta = existingMetaRaw
+      ? (JSON.parse(existingMetaRaw) as SessionMeta)
+      : { clientId, zoneId };
+
+    // Always refresh TTL and update clientId/zoneId
+    const updatedMeta: SessionMeta = { ...existingMeta, clientId, zoneId };
     await redisClient.setEx(
       `titan-agent:meta:${sessionId}`,
       env.SESSION_TTL_SECONDS,
-      JSON.stringify({ clientId })
+      JSON.stringify(updatedMeta),
     );
 
-    // ── Envoie l'historique existant au client (reconnexion avant TTL) ─────────
+    // ── Envoie l'historique existant au client ─────────────────────────────────
     try {
       const history = getSessionHistory(sessionId);
       const pastMessages = await history.getMessages();
@@ -62,8 +127,24 @@ export function registerChatHandlers(io: Server): void {
           role: m._getType() === "human" ? "user" : "agent",
           text: extractTextFromContent(m.content),
         }));
-        socket.emit("chat:history", { messages: formatted });
-        console.log(`📜 Historique restauré — ${formatted.length} messages`);
+        socket.emit("chat:history", {
+          messages: formatted,
+          meta: {
+            title: updatedMeta.title,
+            category: updatedMeta.category,
+          },
+        });
+        console.log(`📜 Historique Redis restauré — ${formatted.length} messages`);
+      } else {
+        // Redis miss — try to recover from server PostgreSQL
+        const archived = await fetchArchivedConversation(sessionId);
+        if (archived && archived.length > 0) {
+          socket.emit("chat:history", {
+            messages: archived,
+            source: "archive",
+          });
+          console.log(`📂 Historique DB restauré — ${archived.length} messages`);
+        }
       }
     } catch (err) {
       console.error("Erreur récupération historique:", err);
@@ -88,7 +169,23 @@ export function registerChatHandlers(io: Server): void {
       socket.emit("chat:typing", { typing: true });
 
       try {
-        // 2. Invoke support agent
+        // 2. Extract/update conversation meta on first message
+        const currentMetaRaw = await redisClient.get(`titan-agent:meta:${sessionId}`);
+        const currentMeta: SessionMeta = currentMetaRaw
+          ? (JSON.parse(currentMetaRaw) as SessionMeta)
+          : { clientId, zoneId };
+
+        if (!currentMeta.title) {
+          const { title, category } = await extractConversationMeta(userMessage, currentMeta);
+          const newMeta: SessionMeta = { ...currentMeta, title, category };
+          await redisClient.setEx(
+            `titan-agent:meta:${sessionId}`,
+            env.SESSION_TTL_SECONDS,
+            JSON.stringify(newMeta),
+          );
+        }
+
+        // 3. Invoke support agent
         const rawText = await invokeSupportAgent(userMessage, sessionId);
         const parsed = parseAgentResponse(rawText);
 
@@ -97,7 +194,7 @@ export function registerChatHandlers(io: Server): void {
           console.log(`   Buttons: ${parsed.buttons.join(", ")}`);
         }
 
-        // 3. Émet la réponse finale structurée
+        // 4. Émet la réponse finale structurée
         socket.emit("chat:typing", { typing: false });
         socket.emit("chat:reply", {
           text: parsed.message,
@@ -116,8 +213,53 @@ export function registerChatHandlers(io: Server): void {
       }
     });
 
-    socket.on("disconnect", () => {
+    // ── Fin de conversation explicite ─────────────────────────────────────────
+    socket.on("chat:end", async () => {
+      console.log(`🏁 [${sessionId}] Fin de conversation demandée`);
+
+      const alreadyDone = await isAlreadyPersisted(sessionId);
+      if (alreadyDone) {
+        socket.emit("chat:session_ended", { sessionId });
+        return;
+      }
+
+      const metaRaw = await redisClient.get(`titan-agent:meta:${sessionId}`);
+      const meta: SessionMeta = metaRaw
+        ? (JSON.parse(metaRaw) as SessionMeta)
+        : { clientId, zoneId };
+
+      const messages = await buildMessagesToSave(sessionId);
+
+      if (messages.length > 0) {
+        await persistConversation(sessionId, meta, messages, sessionStartedAt);
+        await cleanupSession(sessionId);
+      }
+
+      socket.emit("chat:session_ended", { sessionId });
+    });
+
+    // ── Déconnexion ───────────────────────────────────────────────────────────
+    socket.on("disconnect", async () => {
       console.log(`🔌 Client déconnecté — sessionId: ${sessionId}`);
+
+      // Auto-persist on disconnect if not already done and session has messages
+      const alreadyDone = await isAlreadyPersisted(sessionId);
+      if (alreadyDone) return;
+
+      try {
+        const metaRaw = await redisClient.get(`titan-agent:meta:${sessionId}`);
+        const meta: SessionMeta = metaRaw
+          ? (JSON.parse(metaRaw) as SessionMeta)
+          : { clientId, zoneId };
+
+        const messages = await buildMessagesToSave(sessionId);
+        if (messages.length > 0) {
+          await persistConversation(sessionId, meta, messages, sessionStartedAt);
+          // Note: don't cleanupSession on disconnect — keep Redis alive for reconnect within TTL
+        }
+      } catch (err) {
+        console.error(`[disconnect] Erreur persistance [${sessionId}]:`, err);
+      }
     });
   });
 }

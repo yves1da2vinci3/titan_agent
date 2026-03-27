@@ -8,6 +8,12 @@ const schema = z.object({
   TICKET_QUEUE_KEY: z.string().default("titan:tickets:queue"),
   SESSION_TTL_SECONDS: z.coerce.number().default(1800),
   CHANNEL: z.string().default("chatbot"),
+  // Ticket system integration
+  TICKET_SYSTEM_URL: z.string().url().optional(),
+  TICKET_SYSTEM_SECRET: z.string().optional(),
+  // Server integration (conversation persistence)
+  SERVER_URL: z.string().url().optional(),
+  AGENT_INTERNAL_SECRET: z.string().optional(),
 });
 
 const parsed = schema.safeParse(process.env);
