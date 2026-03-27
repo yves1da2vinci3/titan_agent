@@ -11,16 +11,18 @@ import { env } from "../config/env";
  */
 class SafeRedisChatMessageHistory extends RedisChatMessageHistory {
   override async addMessages(messages: BaseMessage[]): Promise<void> {
+    // Filter to only human/AI message types — ToolMessage and AIMessageChunk with
+    // tool_calls can throw "toDict is not a function" in some LangChain versions.
     const serializable = messages.filter((m) => {
       const t = m._getType();
       return t === "human" || t === "ai";
     });
     if (serializable.length === 0) return;
+    // Call parent's addMessages (bypasses our override — avoids infinite loop)
     for (const msg of serializable) {
       try {
-        await super.addMessage(msg);
+        await super.addMessages([msg]);
       } catch (err) {
-        // Skip messages that can't be serialized (e.g. missing toDict())
         if (err instanceof TypeError) continue;
         throw err;
       }

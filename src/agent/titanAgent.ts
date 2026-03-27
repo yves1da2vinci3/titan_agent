@@ -1,11 +1,10 @@
 import { ChatAnthropic } from "@langchain/anthropic";
 import { AgentExecutor, createToolCallingAgent } from "langchain/agents";
 import { ChatPromptTemplate, MessagesPlaceholder } from "@langchain/core/prompts";
-import { RunnableWithMessageHistory } from "@langchain/core/runnables";
 import { StructuredOutputParser } from "@langchain/core/output_parsers";
 import { z } from "zod";
 import { env } from "../config/env";
-import { getSessionHistory } from "../memory/sessionMemory";
+import { getTrimmedHistory, appendToHistory } from "../memory/sessionMemory";
 import { searchFaqTool } from "./tools/searchFaq.tool";
 import { createTicketTool } from "./tools/createTicket.tool";
 import { startTimerTool } from "./tools/startTimer.tool";
@@ -51,14 +50,6 @@ const executor = new AgentExecutor({
   maxIterations: 5,
 });
 
-const agentWithHistory = new RunnableWithMessageHistory({
-  runnable: executor,
-  getMessageHistory: (sessionId: string) => getSessionHistory(sessionId),
-  inputMessagesKey: "input",
-  historyMessagesKey: "chat_history",
-  outputMessagesKey: "output",
-});
-
 function contentToText(value: unknown): string {
   if (typeof value === "string") return value;
   if (value && typeof value === "object" && "content" in value) {
@@ -100,27 +91,25 @@ function normalizeAgentText(raw: unknown): string {
 }
 
 export async function invokeSupportAgent(input: string, sessionId: string): Promise<string> {
-  const result = await agentWithHistory.invoke(
-    {
-      input,
-      format_instructions: outputParser.getFormatInstructions(),
-    },
-    {
-      configurable: { sessionId },
-      callbacks: [],
-    },
-  );
+  // Load conversation history manually (avoids RunnableWithMessageHistory serialization issues)
+  const chatHistory = await getTrimmedHistory(sessionId);
+
+  const result = await executor.invoke({
+    input,
+    chat_history: chatHistory,
+    format_instructions: outputParser.getFormatInstructions(),
+  });
 
   const raw = (result as { output?: unknown; text?: unknown }).output ?? (result as { text?: unknown }).text ?? result;
   const text = normalizeAgentText(raw);
-  if (!text) return "Je n'ai pas pu générer une réponse pour le moment.";
+  const finalText = text || "Je n'ai pas pu générer une réponse pour le moment.";
 
+  // Save to history manually — only simple HumanMessage + AIMessage (no tool calls)
   try {
-    const parsed = (await outputParser.parse(text)) as TitanChatReply;
-    const validated = TitanChatReplySchema.safeParse(parsed);
-    if (validated.success) return validated.data.text.trim();
-    return text;
-  } catch {
-    return text;
+    await appendToHistory(sessionId, input, finalText);
+  } catch (err) {
+    console.warn(`[history] Erreur sauvegarde [${sessionId}]:`, err);
   }
+
+  return finalText;
 }
