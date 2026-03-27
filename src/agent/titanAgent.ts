@@ -56,6 +56,7 @@ const agentWithHistory = new RunnableWithMessageHistory({
   getMessageHistory: (sessionId: string) => getSessionHistory(sessionId),
   inputMessagesKey: "input",
   historyMessagesKey: "chat_history",
+  outputMessagesKey: "output",
 });
 
 function contentToText(value: unknown): string {
