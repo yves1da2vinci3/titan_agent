@@ -2,6 +2,7 @@ import { DynamicStructuredTool } from "@langchain/core/tools";
 import { z } from "zod";
 import { redisClient } from "../../memory/sessionMemory";
 import { env } from "../../config/env";
+import { sessionStorage } from "../../utils/sessionContext";
 
 // Mapping from titan-agent breakdown types → ticketSystem breakdown types
 const BREAKDOWN_TYPE_MAP: Record<string, string> = {
@@ -15,7 +16,6 @@ const BREAKDOWN_TYPE_MAP: Record<string, string> = {
 };
 
 const createTicketSchema = z.object({
-  sessionId: z.string(),
   productType: z.enum(["t_box", "t_mobile"]),
   breakdownType: z.enum([
     "total_individual",
@@ -47,14 +47,15 @@ export const createTicketTool = new DynamicStructuredTool({
     "Crée un ticket de support. N'utiliser QUE si le client a explicitement accepté.",
   schema: createTicketSchema,
   func: async ({
-    sessionId,
     productType,
     breakdownType,
     description,
     intent,
     extractedAddress,
   }: CreateTicketInput): Promise<string> => {
-    const metaRaw = await redisClient.get(`titan-agent:meta:${sessionId}`);
+    // sessionId is injected via AsyncLocalStorage — never passed by the AI
+    const sessionId = sessionStorage.getStore() ?? "";
+    const metaRaw = sessionId ? await redisClient.get(`titan-agent:meta:${sessionId}`) : null;
     const meta: SessionMeta = metaRaw
       ? (JSON.parse(metaRaw) as SessionMeta)
       : { clientId: "0" };

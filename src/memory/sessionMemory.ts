@@ -4,6 +4,30 @@ import { HumanMessage, AIMessage } from "@langchain/core/messages";
 import type { BaseMessage } from "@langchain/core/messages";
 import { env } from "../config/env";
 
+/**
+ * Subclass of RedisChatMessageHistory that safely handles message types that
+ * cannot be serialized (e.g. ToolCall, ToolMessage from AgentExecutor output).
+ * Filters to only store HumanMessage and AIMessage — sufficient for chat context.
+ */
+class SafeRedisChatMessageHistory extends RedisChatMessageHistory {
+  override async addMessages(messages: BaseMessage[]): Promise<void> {
+    const serializable = messages.filter((m) => {
+      const t = m._getType();
+      return t === "human" || t === "ai";
+    });
+    if (serializable.length === 0) return;
+    for (const msg of serializable) {
+      try {
+        await super.addMessage(msg);
+      } catch (err) {
+        // Skip messages that can't be serialized (e.g. missing toDict())
+        if (err instanceof TypeError) continue;
+        throw err;
+      }
+    }
+  }
+}
+
 export const redisClient = createClient({ url: env.REDIS_URL });
 
 redisClient.on("error", (err) => {
@@ -15,8 +39,8 @@ export async function connectRedis(): Promise<void> {
   console.log("✅ Redis connecté");
 }
 
-export function getSessionHistory(sessionId: string): RedisChatMessageHistory {
-  return new RedisChatMessageHistory({
+export function getSessionHistory(sessionId: string): SafeRedisChatMessageHistory {
+  return new SafeRedisChatMessageHistory({
     sessionId: `titan-agent:history:${sessionId}`,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     client: redisClient as any,

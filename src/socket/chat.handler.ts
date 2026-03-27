@@ -11,6 +11,7 @@ import {
   type SessionMeta,
 } from "../services/conversationPersister";
 import { fetchArchivedConversation } from "../services/conversationFetcher";
+import { sessionStorage } from "../utils/sessionContext";
 
 // ─── Guardrail ────────────────────────────────────────────────────────────────
 
@@ -204,8 +205,10 @@ export function registerChatHandlers(io: Server): void {
         const shadowTTL = Math.max(env.SESSION_TTL_SECONDS - 60, 60);
         await redisClient.setEx(`titan-agent:shadow:${sessionId}`, shadowTTL, "1");
 
-        // 3. Invoke support agent
-        const rawText = await invokeSupportAgent(userMessage, sessionId);
+        // 3. Invoke support agent (sessionId available to tools via AsyncLocalStorage)
+        const rawText = await sessionStorage.run(sessionId, () =>
+          invokeSupportAgent(userMessage, sessionId),
+        );
         const parsed = parseAgentResponse(rawText);
 
         console.log(`🤖 [${sessionId}] Agent: ${parsed.message.slice(0, 80)}...`);
