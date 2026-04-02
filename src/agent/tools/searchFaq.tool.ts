@@ -1,7 +1,8 @@
 import { DynamicStructuredTool } from "@langchain/core/tools";
 import { z } from "zod";
 import { readFileSync } from "fs";
-import { join } from "path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 interface FaqSection {
   title: string;
@@ -9,7 +10,8 @@ interface FaqSection {
 }
 
 function loadFaqSections(): FaqSection[] {
-  const faqPath = join(__dirname, "../../faq/titan-faq.md");
+  const here = dirname(fileURLToPath(import.meta.url));
+  const faqPath = join(here, "../../../src/faq/titan-faq.md");
   const raw = readFileSync(faqPath, "utf-8");
   const sections: FaqSection[] = [];
   const lines = raw.split("\n");

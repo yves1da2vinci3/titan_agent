@@ -1,4 +1,4 @@
-import "./config/env"; // valide les variables d'env en premier
+import "./config/env.js"; // valide les variables d'env en premier
 import express from "express";
 import { createServer } from "http";
 import { Server } from "socket.io";
