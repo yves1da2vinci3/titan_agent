@@ -1,5 +1,5 @@
-import { redisClient } from "../memory/sessionMemory";
-import { env } from "../config/env";
+import { redisClient } from "../memory/sessionMemory.js";
+import { env } from "../config/env.js";
 
 const PERSISTED_KEY_PREFIX = "titan-agent:persisted:";
 

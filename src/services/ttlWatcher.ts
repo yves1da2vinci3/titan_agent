@@ -1,7 +1,8 @@
+import type { BaseMessage } from "@langchain/core/messages";
 import { createClient } from "redis";
-import { env } from "../config/env";
-import { redisClient, getSessionHistory } from "../memory/sessionMemory";
-import { persistConversation, isAlreadyPersisted } from "./conversationPersister";
+import { env } from "../config/env.js";
+import { redisClient, getSessionHistory } from "../memory/sessionMemory.js";
+import { persistConversation, isAlreadyPersisted } from "./conversationPersister.js";
 
 function extractText(content: unknown): string {
   if (typeof content === "string") return content;
@@ -46,7 +47,7 @@ export async function startTTLWatcher(): Promise<void> {
       const metaRaw = await redisClient.get(`titan-agent:meta:${sessionId}`);
       const meta = metaRaw ? (JSON.parse(metaRaw) as { clientId: string; zoneId?: string; title?: string; category?: string; agentName?: string }) : { clientId: "unknown" };
 
-      const messages = pastMessages.map((m, i) => ({
+      const messages = pastMessages.map((m: BaseMessage, i: number) => ({
         role: (m._getType() === "human" ? "user" : "agent") as "user" | "agent",
         content: extractText(m.content),
         createdAt: new Date(Date.now() - (pastMessages.length - i) * 1000).toISOString(),

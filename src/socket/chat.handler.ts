@@ -1,17 +1,18 @@
+import type { BaseMessage } from "@langchain/core/messages";
 import { Server, Socket } from "socket.io";
-import { redisClient, getSessionHistory } from "../memory/sessionMemory";
-import { invokeSupportAgent } from "../agent/titanAgent";
-import { parseAgentResponse } from "../agent/responseParser";
-import { env } from "../config/env";
+import { redisClient, getSessionHistory } from "../memory/sessionMemory.js";
+import { invokeSupportAgent } from "../agent/titanAgent.js";
+import { parseAgentResponse } from "../agent/responseParser.js";
+import { env } from "../config/env.js";
 import {
   persistConversation,
   cleanupSession,
   isAlreadyPersisted,
   type MessageToSave,
   type SessionMeta,
-} from "../services/conversationPersister";
-import { fetchArchivedConversation } from "../services/conversationFetcher";
-import { sessionStorage } from "../utils/sessionContext";
+} from "../services/conversationPersister.js";
+import { fetchArchivedConversation } from "../services/conversationFetcher.js";
+import { sessionStorage } from "../utils/sessionContext.js";
 
 // ─── Guardrail ────────────────────────────────────────────────────────────────
 
@@ -81,7 +82,7 @@ async function buildMessagesToSave(sessionId: string): Promise<MessageToSave[]> 
   try {
     const history = getSessionHistory(sessionId);
     const pastMessages = await history.getMessages();
-    return pastMessages.map((m, i) => ({
+    return pastMessages.map((m: BaseMessage, i: number) => ({
       role: m._getType() === "human" ? "user" : "agent",
       content: extractTextFromContent(m.content),
       createdAt: new Date(Date.now() - (pastMessages.length - i) * 1000).toISOString(),
@@ -140,7 +141,7 @@ export function registerChatHandlers(io: Server): void {
 
       if (pastMessages.length > 0) {
         hadHistory = true;
-        const formatted = pastMessages.map((m) => ({
+        const formatted = pastMessages.map((m: BaseMessage) => ({
           role: m._getType() === "human" ? "user" : "agent",
           text: extractTextFromContent(m.content),
         }));

@@ -3,13 +3,13 @@ import { AgentExecutor, createToolCallingAgent } from "langchain/agents";
 import { ChatPromptTemplate, MessagesPlaceholder } from "@langchain/core/prompts";
 import { StructuredOutputParser } from "@langchain/core/output_parsers";
 import { z } from "zod";
-import { env } from "../config/env";
-import { getTrimmedHistory, appendToHistory } from "../memory/sessionMemory";
-import { searchFaqTool } from "./tools/searchFaq.tool";
-import { createTicketTool } from "./tools/createTicket.tool";
-import { startTimerTool } from "./tools/startTimer.tool";
-import { TITAN_SYSTEM_PROMPT } from "./prompt";
-import { stripMarkdownJsonFence } from "./stripMarkdownJsonFence";
+import { env } from "../config/env.js";
+import { getTrimmedHistory, appendToHistory } from "../memory/sessionMemory.js";
+import { searchFaqTool } from "./tools/searchFaq.tool.js";
+import { createTicketTool } from "./tools/createTicket.tool.js";
+import { startTimerTool } from "./tools/startTimer.tool.js";
+import { TITAN_SYSTEM_PROMPT } from "./prompt.js";
+import { stripMarkdownJsonFence } from "./stripMarkdownJsonFence.js";
 
 const llm = new ChatAnthropic({
   model: "claude-haiku-4-5-20251001",

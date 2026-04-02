@@ -1,24 +1,20 @@
 {
   "compilerOptions": {
-    "target": "ES2020",
-    "module": "CommonJS",
-    "lib": ["ES2020"],
+    "target": "ES2022",
+    "module": "NodeNext", // Crucial pour LangGraph
+    "moduleResolution": "NodeNext",
+    "lib": ["ES2022"],
     "outDir": "./dist",
     "rootDir": "./src",
     "strict": true,
     "esModuleInterop": true,
-    "skipLibCheck": true,
+    "skipLibCheck": true, // Garde ça, c'est ton bouclier anti-bourbier
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
-    "moduleResolution": "node",
     "baseUrl": ".",
-    "paths": {
-      "@langchain/langgraph/prebuilt": [
-        "./node_modules/@langchain/langgraph/dist/prebuilt/index.d.ts"
-      ]
-    },
-    "incremental": true,
-    "tsBuildInfoFile": "./.tsbuildinfo"
+    // Supprime la section "paths" pour @langchain/langgraph/prebuilt, 
+    // avec NodeNext, TypeScript le trouvera tout seul.
+    "incremental": false
   },
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist"]

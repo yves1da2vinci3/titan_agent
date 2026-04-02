@@ -7,11 +7,11 @@ import {
 import { ToolNode, toolsCondition } from "@langchain/langgraph/prebuilt";
 import { ChatAnthropic } from "@langchain/anthropic";
 import { SystemMessage, BaseMessage, AIMessage } from "@langchain/core/messages";
-import { searchFaqTool } from "./tools/searchFaq.tool";
-import { createTicketTool } from "./tools/createTicket.tool";
-import { startTimerTool } from "./tools/startTimer.tool";
-import { TITAN_SYSTEM_PROMPT } from "./prompt";
-import { env } from "../config/env";
+import { searchFaqTool } from "./tools/searchFaq.tool.js";
+import { createTicketTool } from "./tools/createTicket.tool.js";
+import { startTimerTool } from "./tools/startTimer.tool.js";
+import { TITAN_SYSTEM_PROMPT } from "./prompt.js";
+import { env } from "../config/env.js";
 
 const tools = [searchFaqTool, createTicketTool, startTimerTool];
 

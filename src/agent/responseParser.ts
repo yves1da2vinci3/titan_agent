@@ -1,4 +1,4 @@
-import { stripMarkdownJsonFence } from "./stripMarkdownJsonFence";
+import { stripMarkdownJsonFence } from "./stripMarkdownJsonFence.js";
 
 export interface ParsedResponse {
   message: string;

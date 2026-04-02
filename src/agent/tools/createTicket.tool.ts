@@ -1,8 +1,8 @@
 import { DynamicStructuredTool } from "@langchain/core/tools";
 import { z } from "zod";
-import { redisClient } from "../../memory/sessionMemory";
-import { env } from "../../config/env";
-import { sessionStorage } from "../../utils/sessionContext";
+import { redisClient } from "../../memory/sessionMemory.js";
+import { env } from "../../config/env.js";
+import { sessionStorage } from "../../utils/sessionContext.js";
 
 // Mapping from titan-agent breakdown types → ticketSystem breakdown types
 const BREAKDOWN_TYPE_MAP: Record<string, string> = {

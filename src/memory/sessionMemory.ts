@@ -2,7 +2,7 @@ import { RedisChatMessageHistory } from "@langchain/redis";
 import { createClient } from "redis";
 import { HumanMessage, AIMessage } from "@langchain/core/messages";
 import type { BaseMessage } from "@langchain/core/messages";
-import { env } from "../config/env";
+import { env } from "../config/env.js";
 
 /**
  * Subclass of RedisChatMessageHistory that safely handles message types that

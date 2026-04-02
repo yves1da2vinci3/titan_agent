@@ -2,10 +2,10 @@ import "./config/env"; // valide les variables d'env en premier
 import express from "express";
 import { createServer } from "http";
 import { Server } from "socket.io";
-import { connectRedis, redisClient, getSessionHistory } from "./memory/sessionMemory";
-import { registerChatHandlers } from "./socket/chat.handler";
-import { startTTLWatcher } from "./services/ttlWatcher";
-import { env } from "./config/env";
+import { connectRedis, redisClient, getSessionHistory } from "./memory/sessionMemory.js";
+import { registerChatHandlers } from "./socket/chat.handler.js";
+import { startTTLWatcher } from "./services/ttlWatcher.js";
+import { env } from "./config/env.js";
 
 function extractTextFromContent(content: unknown): string {
   if (typeof content === "string") return content;
