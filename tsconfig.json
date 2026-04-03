@@ -16,6 +16,11 @@
     // avec NodeNext, TypeScript le trouvera tout seul.
     "incremental": false
   },
+  "ts-node": {
+    "esm": true,
+    "experimentalSpecifierResolution": "node",
+    "transpileOnly": true
+  },
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist"]
 }

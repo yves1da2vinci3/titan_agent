@@ -8,12 +8,13 @@ import { ToolNode, toolsCondition } from "@langchain/langgraph/prebuilt";
 import { ChatAnthropic } from "@langchain/anthropic";
 import { SystemMessage, BaseMessage, AIMessage } from "@langchain/core/messages";
 import { searchFaqTool } from "./tools/searchFaq.tool.js";
+import { searchKnowledgeBaseTool } from "./tools/searchKnowledgeBase.tool.js";
 import { createTicketTool } from "./tools/createTicket.tool.js";
 import { startTimerTool } from "./tools/startTimer.tool.js";
 import { TITAN_SYSTEM_PROMPT } from "./prompt.js";
 import { env } from "../config/env.js";
 
-const tools = [searchFaqTool, createTicketTool, startTimerTool];
+const tools = [searchFaqTool, searchKnowledgeBaseTool, createTicketTool, startTimerTool];
 
 // Annotations de type explicites pour éviter l'inférence récursive de tsc
 const model: ReturnType<ChatAnthropic["bindTools"]> = new ChatAnthropic({

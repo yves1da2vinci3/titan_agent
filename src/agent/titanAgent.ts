@@ -6,6 +6,7 @@ import { z } from "zod";
 import { env } from "../config/env.js";
 import { getTrimmedHistory, appendToHistory } from "../memory/sessionMemory.js";
 import { searchFaqTool } from "./tools/searchFaq.tool.js";
+import { searchKnowledgeBaseTool } from "./tools/searchKnowledgeBase.tool.js";
 import { createTicketTool } from "./tools/createTicket.tool.js";
 import { startTimerTool } from "./tools/startTimer.tool.js";
 import { TITAN_SYSTEM_PROMPT } from "./prompt.js";
@@ -18,7 +19,7 @@ const llm = new ChatAnthropic({
   maxTokens: 1024,
 });
 
-const tools = [searchFaqTool, createTicketTool, startTimerTool];
+const tools = [searchFaqTool, searchKnowledgeBaseTool, createTicketTool, startTimerTool];
 
 const TitanChatReplySchema = z.object({
   text: z.string(),
