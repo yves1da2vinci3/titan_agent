@@ -220,7 +220,7 @@ export function registerChatHandlers(io: Server): void {
         const rawText = await sessionStorage.run(sessionId, () =>
           invokeSupportAgent(userMessage, sessionId),
         );
-        const parsed = parseAgentResponse(rawText);
+        const parsed = await parseAgentResponse(rawText);
 
         console.log(`🤖 [${sessionId}] Agent: ${parsed.message.slice(0, 80)}...`);
         if (parsed.buttons) {

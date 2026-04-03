@@ -1,8 +1,6 @@
 import { ChatAnthropic } from "@langchain/anthropic";
 import { AgentExecutor, createToolCallingAgent } from "langchain/agents";
 import { ChatPromptTemplate, MessagesPlaceholder } from "@langchain/core/prompts";
-import { StructuredOutputParser } from "@langchain/core/output_parsers";
-import { z } from "zod";
 import { env } from "../config/env.js";
 import { getTrimmedHistory, appendToHistory } from "../memory/sessionMemory.js";
 import { searchFaqTool } from "./tools/searchFaq.tool.js";
@@ -10,7 +8,7 @@ import { searchKnowledgeBaseTool } from "./tools/searchKnowledgeBase.tool.js";
 import { createTicketTool } from "./tools/createTicket.tool.js";
 import { startTimerTool } from "./tools/startTimer.tool.js";
 import { TITAN_SYSTEM_PROMPT } from "./prompt.js";
-import { stripMarkdownJsonFence } from "./stripMarkdownJsonFence.js";
+import { parseTitanReplyToPlainText, titanStructuredOutputParser } from "./titanReplyParse.js";
 
 const llm = new ChatAnthropic({
   model: "claude-haiku-4-5-20251001",
@@ -21,21 +19,12 @@ const llm = new ChatAnthropic({
 
 const tools = [searchFaqTool, searchKnowledgeBaseTool, createTicketTool, startTimerTool];
 
-const TitanChatReplySchema = z.object({
-  text: z.string(),
-});
-type TitanChatReply = z.infer<typeof TitanChatReplySchema>;
-
-const outputParser = StructuredOutputParser.fromZodSchema(TitanChatReplySchema);
-
 const prompt = ChatPromptTemplate.fromMessages([
   [
     "system",
     `${TITAN_SYSTEM_PROMPT}
 
-Tu dois répondre au format JSON uniquement, avec exactement cette forme:
-{{"text": "..."}}
-Sans bloc Markdown, sans ligne contenant \`\`\` ni \`\`\`json avant ou après le JSON.
+Réponds au format JSON attendu par le système (voir ci-dessous). Tu peux utiliser soit du JSON brut, soit un bloc Markdown \`\`\`json ... \`\`\` comme dans les instructions.
 
 {format_instructions}`,
   ],
@@ -78,36 +67,25 @@ function contentToText(value: unknown): string {
   }
 }
 
-function normalizeAgentText(raw: unknown): string {
-  const asText = stripMarkdownJsonFence(contentToText(raw).trim());
+async function normalizeAgentText(raw: unknown): Promise<string> {
+  const asText = contentToText(raw).trim();
   if (!asText) return "";
-
-  try {
-    const maybeJson = JSON.parse(asText) as unknown;
-    const validated = TitanChatReplySchema.safeParse(maybeJson);
-    if (validated.success) return validated.data.text.trim();
-  } catch {
-    // not JSON; continue with parser fallback
-  }
-
-  return asText;
+  return parseTitanReplyToPlainText(asText);
 }
 
 export async function invokeSupportAgent(input: string, sessionId: string): Promise<string> {
-  // Load conversation history manually (avoids RunnableWithMessageHistory serialization issues)
   const chatHistory = await getTrimmedHistory(sessionId);
 
   const result = await executor.invoke({
     input,
     chat_history: chatHistory,
-    format_instructions: outputParser.getFormatInstructions(),
+    format_instructions: titanStructuredOutputParser.getFormatInstructions(),
   });
 
   const raw = (result as { output?: unknown; text?: unknown }).output ?? (result as { text?: unknown }).text ?? result;
-  const text = normalizeAgentText(raw);
+  const text = await normalizeAgentText(raw);
   const finalText = text || "Je n'ai pas pu générer une réponse pour le moment.";
 
-  // Save to history manually — only simple HumanMessage + AIMessage (no tool calls)
   try {
     await appendToHistory(sessionId, input, finalText);
   } catch (err) {
