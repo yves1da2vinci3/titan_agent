@@ -56,12 +56,9 @@ async function extractConversationMeta(
     return { title: sessionMeta.title, category: sessionMeta.category ?? "other" };
   }
 
-  // Use a simple heuristic: truncate user message for title, map keywords to category
-  const title = userMessage.length > 60
-    ? userMessage.substring(0, 57) + "..."
-    : userMessage;
+  const clean = userMessage.replace(/\s+/g, " ").trim();
 
-  const lower = userMessage.toLowerCase();
+  const lower = clean.toLowerCase();
   let category = "other";
   if (lower.includes("wifi") || lower.includes("internet") || lower.includes("connexion") || lower.includes("réseau") || lower.includes("fibre")) {
     category = "wifi";
@@ -73,7 +70,26 @@ async function extractConversationMeta(
     category = "account";
   }
 
+  const title = deriveConversationTitle(clean, category);
   return { title, category };
+}
+
+function deriveConversationTitle(userMessage: string, category: string): string {
+  if (category === "wifi") return "Assistance connexion internet";
+  if (category === "payment") return "Assistance paiement et facturation";
+  if (category === "gifting") return "Assistance cadeaux et partage";
+  if (category === "account") return "Assistance compte utilisateur";
+
+  const sentence = userMessage
+    .split(/[.!?]/)
+    .map((s) => s.trim())
+    .find((s) => s.length > 0);
+  if (!sentence) return "Conversation support";
+
+  const words = sentence.split(" ").filter(Boolean);
+  const trimmed = words.slice(0, 8).join(" ");
+  if (trimmed.length <= 48) return trimmed;
+  return trimmed.slice(0, 45).trim() + "...";
 }
 
 // ─── Helpers to build MessageToSave list from Redis history ──────────────────
